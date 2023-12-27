@@ -166,7 +166,7 @@ function useSelectHandler<TData>(
     selectedReducer: TableSelectReducer,
     getRowId: (row: TData) => string,
     setCurrent?: (id: string) => void,
-): [number, (event: HIDEvent, index: number, lastIndex: number) => void] {
+): [number, (event: HIDEvent, index: number, lastIndex: number) => void, (_: number) => void, (_: number) => void, (_: number) => void] {
     const [lastIndex, setLastIndex] = useState(-1);
 
     const onRowClick = useCallback((event: HIDEvent, index: number, lastIndex: number) => {
@@ -205,7 +205,40 @@ function useSelectHandler<TData>(
         }
     }, [getRowId, selectedReducer, setCurrent, table]);
 
-    return [lastIndex, onRowClick];
+    const [dragStart, setDragStart] = useState<number>();
+
+    const onRowPointerDown = useCallback((index: number) => {
+        const rows = table.getRowModel().rows;
+        selectedReducer({ verb: "set", ids: [getRowId(rows[index].original)] });
+        setDragStart(index);
+    }, [getRowId, selectedReducer, table]);
+
+    const onRowPointerUp = useCallback((index: number) => {
+        if (dragStart == null) return;
+        const rows = table.getRowModel().rows;
+        const ids = [];
+        const min = Math.min(dragStart, index);
+        const max = Math.max(dragStart, index);
+        for (let i = min; i <= max; i++) {
+            ids.push(getRowId(rows[i].original));
+        }
+        selectedReducer({ verb: "set", ids });
+        setDragStart(undefined);
+    }, [dragStart, getRowId, selectedReducer, table]);
+
+    const onRowPointerOver = useCallback((index: number) => {
+        if (dragStart == null) return;
+        const rows = table.getRowModel().rows;
+        const ids = [];
+        const min = Math.min(dragStart, index);
+        const max = Math.max(dragStart, index);
+        for (let i = min; i <= max; i++) {
+            ids.push(getRowId(rows[i].original));
+        }
+        selectedReducer({ verb: "set", ids });
+    }, [dragStart, getRowId, selectedReducer, table]);
+
+    return [lastIndex, onRowClick, onRowPointerDown, onRowPointerUp, onRowPointerOver];
 }
 
 function useTableVirtualizer(count: number): [React.MutableRefObject<null>, number, Virtualizer<Element, Element>] {
@@ -300,6 +333,9 @@ function TableRow<TData>(props: {
     lastIndex: number,
     onRowClick: (e: HIDEvent, i: number, li: number) => void,
     onRowDoubleClick?: (row: TData) => void,
+    onRowPointerDown: (_: number) => void,
+    onRowPointerUp: (_: number) => void,
+    onRowPointerOver: (_: number) => void,
     height: number,
     columnSizing: ColumnSizingState,
     columnVisibility: VisibilityState,
@@ -312,7 +348,7 @@ function TableRow<TData>(props: {
         }
     }, [propsDblClick, row.original]);
 
-    const { onRowClick, index, lastIndex } = props;
+    const { onRowClick, index, lastIndex, onRowPointerDown, onRowPointerUp, onRowPointerOver } = props;
 
     const onMouseEvent = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
         onRowClick({
@@ -353,6 +389,20 @@ function TableRow<TData>(props: {
         }, newIndex, lastIndex);
     }, [index, lastIndex, onRowClick]);
 
+    const onPointerDown = useCallback<React.PointerEventHandler<HTMLDivElement>>((event) => {
+        const target = event.target;
+        if (!(target instanceof Element) || target.hasPointerCapture(event.pointerId)) return;
+        onRowPointerDown(index);
+    }, [index, onRowPointerDown]);
+
+    const onPointerUp = useCallback(() => {
+        onRowPointerUp(index);
+    }, [index, onRowPointerUp]);
+
+    const onPointerOver = useCallback(() => {
+        onRowPointerOver(index);
+    }, [index, onRowPointerOver]);
+
     return (
         <div ref={ref}
             className={`tr${props.selected ? " selected" : props.descendantSelected ? " descendant-selected" : ""}`}
@@ -360,6 +410,9 @@ function TableRow<TData>(props: {
             onClick={onMouseEvent}
             onContextMenu={onMouseEvent}
             onDoubleClick={onRowDoubleClick}
+            onPointerDown={onPointerDown}
+            onPointerUp={onPointerUp}
+            onPointerOver={onPointerOver}
             onKeyDown={onKeyDown}
             tabIndex={-1}
         >
@@ -512,7 +565,7 @@ export function TrguiTable<TData>(props: {
         };
     }
 
-    const [lastIndex, onRowClick] = useSelectHandler(
+    const [lastIndex, onRowClick, onRowPointerDown, onRowPointerUp, onRowPointerOver] = useSelectHandler(
         table, props.selectedReducer, props.getRowId, props.setCurrent);
 
     const [parentRef, rowHeight, virtualizer] = useTableVirtualizer(table.getRowModel().rows.length);
@@ -581,6 +634,9 @@ export function TrguiTable<TData>(props: {
                                 start: virtualRow.start,
                                 onRowClick,
                                 onRowDoubleClick: props.onRowDoubleClick,
+                                onRowPointerDown,
+                                onRowPointerUp,
+                                onRowPointerOver,
                                 height: rowHeight,
                                 columnSizing,
                                 columnVisibility,
