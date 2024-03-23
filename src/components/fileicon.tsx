@@ -83,7 +83,7 @@ const extensions = fileTypes.reduce<Record<string, FileType>>((v, c) => {
 
 export function FileIcon({ name }: { name: string }) {
     const theme = useMantineTheme();
-    const selected = useRowSelected();
+    const [selected] = useRowSelected();
     const ext = name.substring(name.lastIndexOf(".") + 1).toLowerCase();
     const FileIcon = Object.prototype.hasOwnProperty.call(extensions, ext) ? extensions[ext].icon : Icon.FileEarmark;
     const color = Object.prototype.hasOwnProperty.call(extensions, ext) ? extensions[ext].color : "gray";

@@ -307,7 +307,7 @@ const MemoizedInnerRow = memo(InnerRow, (prev, next) => {
     );
 }) as typeof InnerRow;
 
-const RowSelectedContext = React.createContext<boolean>(false);
+const RowSelectedContext = React.createContext<[boolean, (longClick: boolean) => void]>([false, () => {}]);
 
 export function useRowSelected() {
     return useContext(RowSelectedContext);
@@ -376,6 +376,19 @@ function TableRow<TData>(props: {
         }, newIndex, lastIndex);
     }, [index, lastIndex, onRowClick]);
 
+    const onCheckboxClick = useCallback((longClick: boolean) => {
+        onRowClick({
+            modKey: true,
+            shiftKey: longClick,
+            isRmb: false,
+        }, index, lastIndex);
+    }, [index, lastIndex, onRowClick]);
+
+    const rowSelectedCtxValue = useMemo<[boolean, (longClick: boolean) => void]>(() => [
+        props.selected,
+        onCheckboxClick,
+    ], [props.selected, onCheckboxClick]);
+
     return (
         <div ref={ref}
             className={`tr${props.selected ? " selected" : props.descendantSelected ? " descendant-selected" : ""}`}
@@ -386,7 +399,7 @@ function TableRow<TData>(props: {
             onKeyDown={onKeyDown}
             tabIndex={-1}
         >
-            <RowSelectedContext.Provider value={props.selected}>
+            <RowSelectedContext.Provider value={rowSelectedCtxValue}>
                 <MemoizedInnerRow {...props} />
             </RowSelectedContext.Provider>
         </div>

@@ -99,3 +99,14 @@ img {
 button[data-hovered="true"] .list-delete-icon {
     display: block;
 }
+
+.selection-state-circle {
+    position: absolute;
+    border: 0.1em solid;
+    border-radius: 0.5em;
+    cursor: pointer;
+}
+
+.selection-state-circle.filled {
+    background-color: currentColor;
+}

@@ -27,8 +27,9 @@ import { bytesToHumanReadableStr, fileSystemSafeName, modKeyString, pathMapFromS
 import { ProgressBar } from "../progressbar";
 import type { AccessorFn, CellContext } from "@tanstack/table-core";
 import type { TableSelectReducer } from "./common";
-import { EditableNameField, TrguiTable } from "./common";
-import { Badge, Box, Button, Kbd, Menu, Portal, Text, useMantineTheme } from "@mantine/core";
+import { EditableNameField, TrguiTable, useRowSelected } from "./common";
+import { Badge, Box, Button, Center, Kbd, Menu, Portal, Text, Transition, useMantineTheme } from "@mantine/core";
+import type { TransitionProps } from "@mantine/core";
 import { ConfigContext, ServerConfigContext } from "config";
 import { StatusIconMap, Error as StatusIconError, Magnetizing, CompletedStopped } from "components/statusicons";
 import { useMutateTorrentPath, useTorrentAction } from "queries";
@@ -39,6 +40,7 @@ import type { ModalCallbacks } from "components/modals/servermodals";
 import type { TorrentActionMethodsType } from "rpc/client";
 import * as Icon from "react-bootstrap-icons";
 import { useHotkeysContext } from "hotkeys";
+import type { MantineTransitionStyles } from "@mantine/core/lib/Transition/transitions";
 const { TAURI, invoke, copyToClipboard } = await import(/* webpackChunkName: "taurishim" */"taurishim");
 
 interface TableFieldProps {
@@ -77,6 +79,13 @@ const TimeField = memo(function TimeField(props: TableFieldProps) {
 });
 
 const AllFields: readonly TableField[] = [
+    {
+        name: "id",
+        label: "Selected",
+        component: SelectedField,
+        accessorFn: (t) => 0, // TODO
+        columnId: "selected",
+    },
     {
         name: "name",
         label: "Name",
@@ -197,6 +206,118 @@ function NameField(props: TableFieldProps) {
             </Box>
         </EditableNameField>
     );
+}
+
+function SelectedField() {
+    const [selected, selectRow] = useRowSelected();
+    const [transitionInProgress, setTransitionInProgress] = useState(false);
+
+    /**
+     * Using a ref to allow the global "click" listener to access this value.
+     */
+    const shouldSelectOnClick = useRef(false);
+    const setShouldSelectOnClick = useCallback((newValue: boolean) => {
+        shouldSelectOnClick.current = newValue;
+    }, []);
+
+    const onPointerDown = useCallback<React.MouseEventHandler<Element>>((e) => {
+        if (e.button !== 0) return;
+
+        e.stopPropagation();
+
+        setShouldSelectOnClick(true);
+        if (!selected) {
+            setTransitionInProgress(true);
+        }
+        /**
+         * Using a global event listener to prevent an edge case where the pointer is released
+         * outside of the circle, but still within the bounds of the same row,
+         * which emits a "click" event on the row itself, causing it to become selected.
+         */
+        window.addEventListener("click", (clickEvent) => {
+            clickEvent.stopPropagation();
+            if (shouldSelectOnClick.current) {
+                setShouldSelectOnClick(false);
+                selectRow(false);
+                setTransitionInProgress(false);
+            }
+        }, { once: true, capture: true });
+    }, [selected, selectRow, setShouldSelectOnClick]);
+
+    const onPointerLeave = useCallback<React.MouseEventHandler<Element>>(() => {
+        setShouldSelectOnClick(false);
+        setTransitionInProgress(false);
+    }, [setShouldSelectOnClick]);
+
+    /**
+     * Changes to this state are effective sooner than the `selected` boolean from useRowSelected(),
+     * which prevents some visual jank where the filled circle created by the transition
+     * disappears before the <Box/>'s background color is set.
+     */
+    const [tmpSelected, setTmpSelected] = useState(false);
+    useEffect(() => {
+        setTmpSelected(false);
+    }, [selected]);
+
+    const onEntered = useCallback(() => {
+        setShouldSelectOnClick(false);
+        selectRow(true);
+        setTmpSelected(true);
+    }, [selectRow, setShouldSelectOnClick]);
+
+    const onDoubleClick = useCallback<React.MouseEventHandler<Element>>((e) => {
+        e.stopPropagation();
+    }, []);
+
+    const transitionStyles = useMemo(() => ({
+        in: { clipPath: "circle(0.4em)" },
+        out: { clipPath: "circle(0em)" },
+        common: { backgroundColor: "currentcolor" },
+        transitionProperty: "clip-path",
+    }), []);
+
+    return (
+        <Center w="100%" h="100%">
+            <InverseTransition
+                mounted={transitionInProgress}
+                transition={transitionStyles}
+                duration={1000}
+                timingFunction="ease-in"
+                onEntered={onEntered}
+            >
+                {(styles) => <Box w="1em" h="1em" style={styles} />}
+            </InverseTransition>
+            <Box
+                w="1em"
+                h="1em"
+                className={`selection-state-circle ${
+                    selected || tmpSelected ? "filled" : ""
+                }`}
+                onPointerDown={onPointerDown}
+                onPointerLeave={onPointerLeave}
+                onDoubleClick={onDoubleClick}
+            />
+        </Center>
+    );
+}
+
+interface InverseTransitionProps extends TransitionProps {
+    transition: MantineTransitionStyles,
+}
+
+/**
+ * Workaround for https://github.com/mantinedev/mantine/issues/3126
+ * It looks like the bug only affects the "enter" transition,
+ * and as we only really need a one-way transition, we can work around
+ * the bug by logically flipping the two transition directions.
+ */
+function InverseTransition(props: InverseTransitionProps) {
+    const transition = useMemo(() => ({
+        ...props.transition,
+        in: props.transition.out,
+        out: props.transition.in,
+    }), [props.transition]);
+    return <Transition {...props} mounted={!props.mounted} transition={transition} duration={props.exitDuration} exitDuration={props.duration} onEnter={props.onExit} onExit={props.onEnter} onEntered={props.onExited} onExited={props.onEntered} />;
 }
 
 function StringField(props: TableFieldProps) {
